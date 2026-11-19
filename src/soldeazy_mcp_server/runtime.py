@@ -15,7 +15,7 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
-from soldeazy_mcp_server.config import Settings
+from soldeazy_mcp_server.config import Settings, resolve_dir
 from soldeazy_mcp_server.providers.soldeazy import SoldeazyBrowser
 
 logging.basicConfig(
@@ -45,7 +45,9 @@ def _prepare_temp_dir(settings: Settings) -> Path:
     override = (os.getenv("SOLDEAZY_TEMP_DIR") or "").strip()
     target = Path(override).expanduser() if override else settings.data_dir / "temp"
     if not target.is_absolute():
-        target = (Path.cwd() / target).resolve()
+        # 相对路径按**仓库根**解析，不用 cwd —— 与 profile 目录同一口径。
+        # 客户端从 C:\Windows\System32 拉起时，按 cwd 会把内核解压到那里。
+        target = resolve_dir(str(target))
 
     try:
         target.mkdir(parents=True, exist_ok=True)

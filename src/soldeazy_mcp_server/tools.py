@@ -459,8 +459,8 @@ async def soldeazy_list_shops(
     comes from the datasheet search form, which reflects the site's own
     authorisation rather than a guessed inventory.
 
-    **默认只回 20 个**（生产账号有 85 个，全量倒进对话约 1200 token）。
-    只记得部分名字时先传 `keyword`（如 `FUN`、`LT`），比翻页更省。
+    **默认只回 20 个**（生产账号可能有上百个，全量倒进对话会吃掉大量 token）。
+    只记得部分名字时先传 `keyword`（如 `EBAY`、`US`），比翻页更省。
     """
 
     try:
@@ -496,8 +496,9 @@ async def soldeazy_list_shops(
 async def soldeazy_switch_shop(shop: str) -> dict[str, Any]:
     """Switch the active channel account for later calls.
 
-    Accepts the short name (`FUN`) or the numeric id. After switching, search
-    and preview tools default to this shop instead of asking again.
+    Accepts the short name (as shown in the platform's shop dropdown, e.g.
+    ``ACME``) or the numeric id. After switching, search and preview tools
+    default to this shop instead of asking again.
     """
     try:
         picked = await soldeazy.switch_shop(shop)

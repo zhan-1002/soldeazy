@@ -37,7 +37,7 @@ TOLERANCE = 0.005
 #: 等同步工序任务的轮数（每轮 6 秒）。
 #:
 #: 已刊登计划：10 轮（60 秒）——同步任务确实会出现，值得等。
-#: 未刊登计划：**0 轮**。未刊登数据表在平台上同步不上去（FUN 实机：历史 25 个
+#: 未刊登计划：**0 轮**。未刊登数据表在平台上同步不上去（ACME 实机：历史 25 个
 #: 工序任务全是 DSUploadTask，从来没有同步类任务），所以等它是纯浪费——
 #: 原来设 2 轮仍要空烧 12 秒。现在直接跳过，靠下面的 else 分支记一条
 #: 「工序队列没观察到同步任务，未刊登属预期」的警告（不判失败）。
@@ -274,7 +274,7 @@ def plan_to_cell_changes(
 
 
 def _shop_name_matches(expected: str, name: str) -> bool:
-    """店铺名比对：导出列写短名（FUN），页面/搜索结果写长名（EBAY FUN）。"""
+    """店铺名比对：导出列写短名（ACME），页面/搜索结果写长名（EBAY ACME）。"""
 
     if not expected or not name:
         return False
@@ -347,7 +347,7 @@ def shop_scope_problem(plan: ChangePlan, shops: list[str] | None) -> str:
     seen = [name for name in (shops or []) if name]
     if not expected or not seen:
         return ""
-    # 导出列写的是短名（FUN），搜索结果里是长名（EBAY FUN），两种都认
+    # 导出列写的是短名（ACME），搜索结果里是长名（EBAY ACME），两种都认
     if any(_shop_name_matches(expected, name) for name in seen):
         return ""
     return (
@@ -666,7 +666,7 @@ async def _export_and_locale(
         exported = workdir / f"{plan.plan_id}.export.xlsx"
         await browser.search("", plan.site, only_listed=plan.only_listed)
         # 导出走 cookie/API 通道：页面通道的弹层在部分会话下不稳定
-        # （2026-11-11 实机：FUN 上点导出后 #jqizoo 不出现），且 API 通道
+        # （2026-11-11 实机：ACME 上点导出后 #jqizoo 不出现），且 API 通道
         # 的筛选参数直接取自最近一次 search，行集与计划一致。
         await browser.export_via_api(exported)
 
@@ -769,7 +769,7 @@ async def _sync_after_upload(
         sync_problems.extend(sync_queue.get("problems") or [])
         sync_notes.extend(sync_queue.get("notes") or [])
     else:
-        # 没观察到同步任务：未刊登数据表本来就不会产生同步工序（FUN 实测），
+        # 没观察到同步任务：未刊登数据表本来就不会产生同步工序（ACME 实测），
         # 记警告不判失败；已刊登计划也先记警告，避免平台行为差异造成误报。
         sync_notes.append(
             "同步接口返回成功但工序队列没观察到同步任务，"
@@ -794,7 +794,7 @@ def _sync_status(sync_result: dict[str, Any] | None, problems: list[str]) -> str
 
     ``ok`` 必须意味着**真的核对到了同步工序**。原来只看「没有 problems」
     就返回 ``ok``：同步接口回 200、但工序队列里根本没出现任务时
-    （未刊登数据表就是这样，FUN 实测），会报成 ``synced: ok``，
+    （未刊登数据表就是这样，ACME 实测），会报成 ``synced: ok``，
     让"一条都没核对"看起来像"全部同步成功"。
     这种情况返回 ``unverified``，由 notes 说明原因。
     """
@@ -1327,7 +1327,7 @@ async def reconcile(
     # 那就不需要全量的对账」。上传文件早就收窄到 ``keep_rows`` 了，
     # 唯独对账还在导 1636 个数据表 —— 每轮 18 秒，最多 3 轮。
     #
-    # 实测（2026-11-18，FUN/US，同一进程内交替测量，排除缓存效应）：
+    # 实测（2026-11-18，ACME/US，同一进程内交替测量，排除缓存效应）：
     #
     #   rowid 3 个 ：冷 19.4s，热 **8.0s / 8.6s**（11 行 / 3 个数据表）
     #   全店       ：冷 37.6s，热 40.8s / 47.6s（7075 行 / 1636 个数据表）

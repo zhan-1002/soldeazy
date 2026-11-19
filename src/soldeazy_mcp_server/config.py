@@ -47,25 +47,49 @@ def _env_bool(name: str, fallback: bool) -> bool:
     raise ValueError(f"{name} must be a boolean")
 
 
-def _default_data_dir() -> Path:
-    """默认数据目录：**工作区内**的 ``.soldeazy-data``。
+def _package_root() -> Path | None:
+    """包所在仓库的根目录（``<repo>/src/soldeazy_mcp_server`` 的上两级）。
 
-    为什么不用 ``%LOCALAPPDATA%``：MCP 客户端常给服务进程套沙箱，沙箱只允许写
-    工作区，写本地数据目录会 EPERM。放在工作区内既满足沙箱，又能靠 .gitignore
-    排除（里面是登录 cookie，不能入库）。
-
-    相对路径一律按 ``Path.cwd()`` 解析——``uv run`` 是从项目根启动的，
-    所以 ``cwd`` 就是仓库根，不必依赖客户端注入绝对路径。
+    能算出来就用它当默认基准，**不依赖进程的当前工作目录**。
+    返回 None 表示当前是安装进 site-packages 的形态，此时无"仓库根"可言。
     """
 
+    here = Path(__file__).resolve()
+    candidate = here.parent.parent.parent   # config.py → 包 → src → 仓库根
+    return candidate if (candidate / "pyproject.toml").is_file() else None
+
+
+def _default_data_dir() -> Path:
+    """默认数据目录：**仓库内**的 ``.soldeazy-data``。
+
+    为什么不用 ``%LOCALAPPDATA%``：MCP 客户端常给服务进程套沙箱，沙箱只允许写
+    工作区，写本地数据目录会 EPERM。放在仓库内既满足沙箱，又能靠 .gitignore
+    排除（里面是登录 cookie，不能入库）。
+
+    **基准用包的安装位置，不用 ``Path.cwd()``**（2026-11-19 修）：
+
+    原来这里写的是 ``Path.cwd()``，注释还辩解"``uv run`` 是从项目根启动的"。
+    但推荐给客户端的启动方式是 ``.venv\\Scripts\\python.exe -m soldeazy_mcp_server``
+    —— 这时 cwd 由客户端决定，可能是 ``C:\\Windows\\System32`` 或用户主目录。
+    后果：profile、导出文件、计划与审计全写到那个目录去，既找不到也留了一地垃圾。
+
+    顺序：环境变量 > 仓库根（由包位置推出）> cwd（兜底，如 site-packages 安装）。
+    """
+
+    root = _package_root()
+    if root is not None:
+        return (root / ".soldeazy-data").resolve()
     return (Path.cwd() / ".soldeazy-data").resolve()
 
 
 def resolve_dir(raw: str) -> Path:
-    """把配置里的目录解析成绝对路径（相对路径按 cwd，支持 ``~``）。"""
+    """把配置里的目录解析成绝对路径（相对路径按仓库根，支持 ``~``）。"""
 
     path = Path(str(raw or ".")).expanduser()
-    return path if path.is_absolute() else (Path.cwd() / path).resolve()
+    if path.is_absolute():
+        return path
+    root = _package_root()
+    return ((root or Path.cwd()) / path).resolve()
 
 
 @dataclass(frozen=True)

@@ -90,7 +90,7 @@ def bulk_range(n: int, total: int, limit: int = PLATFORM_BULK_LIMIT) -> tuple[in
 
     **序号是倒序的**，这是 2026-11-18 实测出来的，与直觉相反：
     序号 1 对应全量**最后**一条，序号 ``total`` 对应**第一条**。
-    实测（FUN/US，1636 个数据表）：``partial 1..10`` 拿到全量末尾 10 个，
+    实测（ACME/US，1636 个数据表）：``partial 1..10`` 拿到全量末尾 10 个，
     ``1632..1636`` 拿到开头 5 个，``500..600`` 与映射预测 101 条逐条相同。
 
     好在"按批切段"本身不受方向影响——区间是无重叠、无遗漏的双射，
@@ -375,7 +375,7 @@ def _bulk_limit_hint(total_records: int) -> dict[str, Any]:
 
 
 def _shop_name_matches(expected: str, name: str) -> bool:
-    """店铺名比对：导出列写短名（FUN），页面写长名（EBAY FUN）。
+    """店铺名比对：导出列写短名（ACME），页面写长名（EBAY ACME）。
 
     与 ``soldeazy_change._shop_matches`` / ``soldeazy_apply._shop_name_matches``
     同一口径——三处必须在"什么算同一个店铺"上一致，
@@ -2192,7 +2192,7 @@ class SoldeazyBrowser:
         """不导航页面，直接用会话 cookie 提交导出表单。
 
         2026-11-11 起作为**默认导出通道**：页面通道的弹层（`#jqizoo`）在部分
-        会话下点「导出」后不出现（FUN 实机复现），而本通道的筛选参数直接取自
+        会话下点「导出」后不出现（ACME 实机复现），而本通道的筛选参数直接取自
         最近一次 search（`_last_query` / `_last_site` / `_last_status_value` /
         `_last_date_value`），行集与计划一致，且实测一次拿到全量 7075 行。
 

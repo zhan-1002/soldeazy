@@ -1,4 +1,4 @@
----
+﻿---
 name: soldeazy-stock-change
 description: Change Soldeazy datasheet quantities by parent SKU, expand to every child row, and understand why it is the same call as a price change. Use when a user asks to update stock or quantity.
 ---
@@ -16,19 +16,19 @@ description: Change Soldeazy datasheet quantities by parent SKU, expand to every
 
 ## 母体与子体的关系
 
-一个数据表 = 一个母体行 + 它旗下的子体行。实测（FUN/US）：
+一个数据表 = 一个母体行 + 它旗下的子体行。实测（某店铺 / US 站）：
 
 ```
 数据表 3117211（5 行）
   C=母体          D=SKU           E=数量   F=价格
-  GT-D1-FUN-P     FGS50W110V       100    22.77
-  GT-D1-FUN-P     FGS100W110V       50    27.48
-  GT-D1-FUN-P     FGS200W110V      100    45.50
-  GT-D1-FUN-P     FGS300W110V       50    59.16
-  GT-D1-FUN-P     FGS500W110V      100    99.56
+  PARENT-SKU-A     FGS50W110V       100    22.77
+  PARENT-SKU-A     FGS100W110V       50    27.48
+  PARENT-SKU-A     FGS200W110V      100    45.50
+  PARENT-SKU-A     FGS300W110V       50    59.16
+  PARENT-SKU-A     FGS500W110V      100    99.56
 ```
 
-所以 `quantities={"GT-D1-FUN-P": 60}` 会把这张表里 5 个子体行的数量
+所以 `quantities={"PARENT-SKU-A": 60}` 会把这张表里 5 个子体行的数量
 **全部写成 60**。这是库存的语义：库存挂在母体上，子体只是不同规格。
 
 ### 同一母体的原有数量可能不一致
@@ -42,7 +42,7 @@ description: Change Soldeazy datasheet quantities by parent SKU, expand to every
 
 实测（2026-11-19）：
 ```
-搜母体 *GT-D1-FUN-P  → 命中 1 个数据表 / 返回 5 行（5 个子体全在）
+搜母体 *PARENT-SKU-A  → 命中 1 个数据表 / 返回 5 行（5 个子体全在）
 搜子体 *FGS100W110V  → 命中 33 个数据表 / 返回 370 行
 ```
 

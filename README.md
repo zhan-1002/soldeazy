@@ -38,7 +38,7 @@ Soldeazy 没有公开接口文档。生产链路是「导出 xlsx → 离线改 
 
 ### 只导出命中的子集
 
-实测（FUN/US，目标 SKU 散落 33 个数据表）：
+实测（单店 / US 站，目标 SKU 散落 33 个数据表）：
 
 | 方式 | 耗时 | 数据表 | 文件 |
 |---|---|---|---|
@@ -117,20 +117,49 @@ cp .env.example .env          # 填可选配置
 
 ## 配置到 MCP 客户端
 
+**最简形式（推荐）**：只写启动命令，其余全部自动推导。
+
 ```json
 {
   "soldeazy": {
     "type": "stdio",
-    "command": "<repo>/.venv/Scripts/python.exe",
+    "command": ".venv/Scripts/python.exe",
     "args": ["-m", "soldeazy_mcp_server"],
-    "env": {
-      "SOLDEAZY_PROFILE_DIR": "<repo>/.soldeazy-data/profile",
-      "SOLDEAZY_HEADLESS": "1",
-      "SOLDEAZY_WRITE_ENABLED": "1"
-    }
+    "env": { "SOLDEAZY_HEADLESS": "1", "SOLDEAZY_WRITE_ENABLED": "1" }
   }
 }
 ```
+
+为什么可以不写路径：
+
+- **数据目录**由包的位置反推（`<repo>/.soldeazy-data`），**不依赖 cwd**
+  —— 客户端从 `C:\Windows\System32` 拉起也一样落在仓库内
+- **profile 目录**默认就是 `<数据目录>/profile`，不用单独配
+
+`command` 是相对路径时，取**客户端配置文件的所在目录**或**你启动客户端时的工作目录**。
+不同客户端解析方式不同，若报"找不到命令"，改成绝对路径即可 ——
+这是唯一**必须**手工改的地方，因为它由客户端决定，代码无从推导。
+
+**绝对路径写法**（客户端不支持相对命令时）：
+
+```json
+{
+  "soldeazy": {
+    "type": "stdio",
+    "command": "C:/path/to/soldeazy/.venv/Scripts/python.exe",
+    "args": ["-m", "soldeazy_mcp_server"],
+    "env": { "SOLDEAZY_HEADLESS": "1", "SOLDEAZY_WRITE_ENABLED": "1" }
+  }
+}
+```
+
+`env` 里**不再需要** `SOLDEAZY_PROFILE_DIR`。只有在要把数据放到仓库外时才显式设它：
+
+```json
+"env": { "SOLDEAZY_PROFILE_DIR": "D:/soldeazy-data/profile" }
+```
+
+那时**必须用绝对路径**：相对路径会按仓库根解析，不是按 cwd。
 
 **不要用 `uv run` 启动**：客户端以管道方式拉起子进程时，uv 初始化自己的缓存
 可能失败（`Failed to initialize cache ... 拒绝访问`），服务在 MCP 握手之前就死了，
@@ -138,8 +167,7 @@ cp .env.example .env          # 填可选配置
 
 ## 安全提醒
 
-- 写工具默认**关闭**（`SOLDEAZY_WRITE_ENABLED=0`），验证读链路后再开。
-- 建议先用一个专用测试账号（全未刊登）跑通全流程，再上生产账号。
+- 写工具默认**关闭**（`SOLDEAZY_WRITE_ENABLED=0`），先把读链路跑通，再开写入。
 - `.soldeazy-data/` 含登录 cookie，**已在 .gitignore 里**，不要提交。
 
 ## 文档
