@@ -59,3 +59,9 @@ desktop.ini
 *.log
 *.tmp
 ~$*
+
+# 测试临时目录（pytest 的 tmp_path 有时落在仓库根）
+tmp*/
+tmp[0-9a-z_]*/
+pytest-of-*/
+.pytest_cache/

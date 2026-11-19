@@ -74,6 +74,16 @@ PLATFORM_BULK_LIMIT = 3000
 #: 固定传它，列布局就不会随账号上次的选择而变。
 INSPECTION_ALL_COLUMNS = "ALL columns"
 
+#: 刊登方式（Listing Format）的默认值：``BIN`` = 长期在线（Buy It Now）。
+#:
+#: 用户口径（2026-11-19）：「默认为 bin 除非被要求」。拍卖（``AUC``）
+#: 的价格/库存没有改的意义，混进来只会让计划和同步数对不上。
+#:
+#: 页面上的真实选项（从 HTML 读到的原文，未硬编码猜测）：
+#:   ``''`` → 全部、``'AUC'`` → 拍卖、``'BIN'`` → 长期在线
+#: 注意空串代表"全部"，所以默认值不能是空串。
+DEFAULT_LISTING_FORMAT = "BIN"
+
 
 def bulk_range(n: int, total: int, limit: int = PLATFORM_BULK_LIMIT) -> tuple[int, int]:
     """第 ``n`` 批（从 0 起）在 ``partial_result`` 里的序号区间，闭区间。
@@ -735,6 +745,9 @@ class SoldeazyBrowser:
         self._last_status_value: str = ""
         self._last_date: str = ""
         self._last_date_value: str = ""
+        #: 最近一次搜索用的刊登方式（``BIN`` / ``AUC`` / ``""``=全部）。
+        #: 导出必须沿用同一个值，否则"搜的是 BIN、导的是全部"。
+        self._last_listing_format: str = DEFAULT_LISTING_FORMAT
         #: 最近一次搜索页下发的同步令牌；同步接口必须用它，不能沿用旧值
         self._last_sql_token: str = ""
         self.browser_channel_used: str = ""
@@ -1488,6 +1501,7 @@ class SoldeazyBrowser:
         *,
         only_listed: bool = True,
         expand_variants: bool = True,
+        listing_format: str = DEFAULT_LISTING_FORMAT,
     ) -> dict[str, Any]:
         """搜索并读回结果。**HTTP 通道优先**（不碰浏览器、不抢 profile 锁），
         HTTP 不可用时回退 DOM 通道。
@@ -1495,6 +1509,10 @@ class SoldeazyBrowser:
         `only_listed` 默认开启：只搜「已刊登」的数据表。
         改价/改库存只对已刊登的有意义——未刊登的同步不到 eBay，
         混进来只会让上传数和同步数对不上。
+
+        ``listing_format`` 默认 ``BIN``（长期在线），拍卖（``AUC``）不碰。
+        拍卖的价格/库存没有改的意义，混进来只会让计划和同步数对不上。
+        要包含全部形式时显式传 ``""``。
 
         ``expand_variants`` 默认**开启**：一个数据表里堆叠的多个变体各成一条
         记录。之前默认只留第一个变体，其余 SKU 在搜索结果里**凭空消失**
@@ -1505,6 +1523,7 @@ class SoldeazyBrowser:
 
         self._last_query = sku_terms or ""
         self._last_site = site or ""
+        self._last_listing_format = listing_format
         shop = shop or ((self.active_shop or {}).get("name") or "")
         async with self._lock:
             # 站点码在这里**先解析一次**：解析失败要立刻报错，不能等到 HTTP 失败
@@ -1512,7 +1531,9 @@ class SoldeazyBrowser:
             self._last_site_code = await self.resolve_site_code(site)
             try:
                 result = await self._search_via_http(
-                    sku_terms, site, shop, only_listed, expand_variants=expand_variants
+                    sku_terms, site, shop, only_listed,
+                    expand_variants=expand_variants,
+                    listing_format=listing_format,
                 )
             except SoldeazyError as exc:
                 if exc.code in {
@@ -1523,12 +1544,16 @@ class SoldeazyBrowser:
                     raise
                 logger.warning("HTTP 搜索失败（%s），回退 DOM 通道", exc.code)
                 result = await self._search_via_page(
-                    sku_terms, site, shop, only_listed, expand_variants=expand_variants
+                    sku_terms, site, shop, only_listed,
+                    expand_variants=expand_variants,
+                    listing_format=listing_format,
                 )
             except Exception as exc:  # noqa: BLE001 - 回退总比整条链路死掉好
                 logger.warning("HTTP 搜索异常（%s），回退 DOM 通道", type(exc).__name__)
                 result = await self._search_via_page(
-                    sku_terms, site, shop, only_listed, expand_variants=expand_variants
+                    sku_terms, site, shop, only_listed,
+                    expand_variants=expand_variants,
+                    listing_format=listing_format,
                 )
 
         # 记下这次命中数：`read_datasheet_values(search=False)` 不会重新搜索，
@@ -1545,6 +1570,7 @@ class SoldeazyBrowser:
         *,
         limit: int = 200,
         expand_variants: bool = True,
+        listing_format: str = DEFAULT_LISTING_FORMAT,
     ) -> dict[str, Any]:
         """和浏览器做的一模一样：GET 列表页拿表单当前状态 → 改筛选 → POST。
 
@@ -1594,6 +1620,18 @@ class SoldeazyBrowser:
             ("listsite", self._last_site_code),
             ("listactive", status_value),
             ("listdate", ""),
+            # **刊登方式默认 BIN**（用户 2026-11-19 定）。
+            #
+            # BIN = 长期在线（Buy It Now），是日常改价/改库存的对象；
+            # AUC = 拍卖，改它的价格/库存没有意义，不碰。
+            #
+            # 页面上的真实选项（从 HTML 读到，不硬编码猜）：
+            #   '' → 全部、'AUC' → 拍卖、'BIN' → 长期在线
+            # 传空串才是"全部"，所以这里默认值必须是 'BIN' 而不是 ''。
+            # 注意**不能**写成 ``listing_format or "BIN"``：空串是合法值
+            # （用户显式要"全部形式"），`or` 会把它悄悄改成 BIN。
+            # 只有 None 才用默认值。
+            ("listformat", DEFAULT_LISTING_FORMAT if listing_format is None else listing_format),
             ("view_profile_id", "Default"),
             # **统一用「检视 = 所有」**（用户 2026-11-18 定的口径）。
             #
@@ -1684,12 +1722,22 @@ class SoldeazyBrowser:
         only_listed: bool,
         *,
         expand_variants: bool = True,
+        listing_format: str = DEFAULT_LISTING_FORMAT,
     ) -> dict[str, Any]:
         """DOM 通道（回退用）：调用方已持有 ``self._lock``。"""
 
         page = await self._ensure_page()
         await self._goto(f"{self.base_url}{LIST_PATH}")
         await self._dismiss_popup()
+
+        # 刊登方式：默认 BIN（长期在线），拍卖不碰。
+        # 两条通道必须用同一口径，否则 HTTP 失败回退到 DOM 时范围会变。
+        try:
+            scope = page.locator("select[name='listformat']").first
+            if await scope.count():
+                await scope.select_option(listing_format or "", timeout=5000)
+        except Exception as exc:  # noqa: BLE001 - 设不上不影响主流程，但留痕
+            logger.warning("DOM 通道设置刊登方式失败（%s）：%s", listing_format, exc)
 
         await (await self._locate("search_sku")).fill(sku_terms)
         if site:
@@ -2187,6 +2235,9 @@ class SoldeazyBrowser:
             # （only_listed=True 时是「已刊登(所有)」，False 时留空=全部）。
             "listdate": self._last_date_value or "",
             "listactive": self._last_status_value or "",
+            # **导出必须沿用搜索时的刊登方式**，否则会"搜的是 BIN、
+            # 导的是全部"——计划行集直接错位，AUC 的行混进来后被当成要改的对象。
+            "listformat": self._last_listing_format or "",
             "view_profile_id": "Default",
             "radioEditTypeValue": "schedule",
             # bulk_option_from/to 只对 partial_result 有效——页面上它们只在
@@ -2685,6 +2736,7 @@ class SoldeazyBrowser:
             ("listsite", self._last_site_code or ""),
             ("listactive", "All" if only_listed else ""),
             ("listdate", ""),
+            ("listformat", self._last_listing_format or ""),
             ("view_profile_id", "Default"),
             ("selsetprofile", INSPECTION_ALL_COLUMNS),
             ("page", str(page)),

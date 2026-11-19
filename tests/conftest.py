@@ -17,6 +17,15 @@ import sys
 import tempfile
 from typing import Any
 
+#: 确保导入的是**本仓库**的 ``src/soldeazy_mcp_server``。
+#:
+#: 如果不显式插入，当这台机器上还装着别的同名包（例如从同一个工作区分出去的
+#: 旧仓库），``import soldeazy_mcp_server`` 可能解析到那一份 —— 测试会因为
+#: "代码不是这里的"而莫名其妙地失败，或者更糟：拿旧代码跑出"通过"。
+_REPO_SRC = pathlib.Path(__file__).resolve().parents[1] / "src"
+if str(_REPO_SRC) not in sys.path:
+    sys.path.insert(0, str(_REPO_SRC))
+
 
 def _owner_only_dirs_are_unreadable() -> bool:
     """实测 mode=0o700 建出来的目录当前进程能否读取。"""
