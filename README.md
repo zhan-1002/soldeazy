@@ -145,6 +145,8 @@ cp .env.example .env          # 填可选配置
 ## 文档
 
 - [`docs/soldeazy-写入链路架构.md`](docs/soldeazy-写入链路架构.md) — 计划生命周期、对账保证、限制取证
+- [`docs/soldeazy-创建与图片-接口说明.md`](docs/soldeazy-创建与图片-接口说明.md) — 创建数据表与图片上传接口
+- [`docs/soldeazy-验收清单.md`](docs/soldeazy-验收清单.md) — A–F 六组验收项及结果
 - [`docs/待确认清单-影刀改价.md`](docs/待确认清单-影刀改价.md) — 与影刀原流程的差异记录
 
 ## 测试
