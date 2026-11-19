@@ -1,0 +1,11 @@
+# 统一换行：仓库内存 LF，检出时按平台转换。
+#
+# 不设这个的话，Git for Windows 默认 core.autocrlf=true 会把文件检出成 CRLF，
+# 而 SKILL.md 的 frontmatter 解析对 \r\n 敏感（已做归一化，但没必要多这一层）。
+* text=auto eol=lf
+
+# 明确这些是二进制
+*.xlsx binary
+*.png binary
+*.jpg binary
+*.jpeg binary
