@@ -16,7 +16,56 @@ from typing import Any
 
 from dotenv import load_dotenv
 
-load_dotenv()
+
+def _package_root() -> Path | None:
+    """包所在仓库的根目录（``<repo>/src/soldeazy_mcp_server`` 的上两级）。
+
+    能算出来就用它当默认基准，**不依赖进程的当前工作目录**。
+    返回 None 表示当前是安装进 site-packages 的形态，此时无"仓库根"可言。
+    """
+
+    here = Path(__file__).resolve()
+    candidate = here.parent.parent.parent   # config.py → 包 → src → 仓库根
+    return candidate if (candidate / "pyproject.toml").is_file() else None
+
+
+def _env_file_candidates() -> list[Path]:
+    """候选 ``.env`` 路径，按优先级排序。
+
+    ``load_dotenv()`` 不带参数时只从**进程当前工作目录**往上找。MCP 客户端
+    启动服务进程时给的 cwd 往往是客户端自己的工作目录（实测 Cursor 的
+    工作区根），根本到不了仓库根 —— 于是 ``.env`` 里的凭据读不到，
+    ``credentials_configured`` 一直是 false，登录只能人工点。
+
+    所以显式按「``SOLDEAZY_ENV_FILE`` 指定 → 仓库根 → cwd」找。
+    """
+
+    candidates: list[Path] = []
+    explicit = os.getenv("SOLDEAZY_ENV_FILE", "").strip()
+    if explicit:
+        candidates.append(Path(explicit).expanduser())
+    root = _package_root()
+    if root is not None:
+        candidates.append(root / ".env")
+    candidates.append(Path.cwd() / ".env")
+    return candidates
+
+
+def _load_env_file() -> Path | None:
+    """加载第一个存在的 ``.env``，返回它的路径（都不存在则返回 None）。
+
+    ``override=False``：已存在的真实环境变量优先，部署脚本注入的值不会被
+    仓库里的 ``.env`` 覆盖。
+    """
+
+    for path in _env_file_candidates():
+        if path.is_file():
+            load_dotenv(path, override=False)
+            return path
+    return None
+
+
+ENV_FILE = _load_env_file()
 
 
 def _load_json_config() -> dict[str, Any]:
@@ -45,18 +94,6 @@ def _env_bool(name: str, fallback: bool) -> bool:
     if value in {"0", "false", "no", "off"}:
         return False
     raise ValueError(f"{name} must be a boolean")
-
-
-def _package_root() -> Path | None:
-    """包所在仓库的根目录（``<repo>/src/soldeazy_mcp_server`` 的上两级）。
-
-    能算出来就用它当默认基准，**不依赖进程的当前工作目录**。
-    返回 None 表示当前是安装进 site-packages 的形态，此时无"仓库根"可言。
-    """
-
-    here = Path(__file__).resolve()
-    candidate = here.parent.parent.parent   # config.py → 包 → src → 仓库根
-    return candidate if (candidate / "pyproject.toml").is_file() else None
 
 
 def _default_data_dir() -> Path:
@@ -191,4 +228,6 @@ class Settings:
             "credentials_configured": bool(
                 self.soldeazy_username and self.soldeazy_password
             ),
+            # 凭据读不到时，第一件要确认的就是"到底加载了哪个 .env"
+            "env_file": str(ENV_FILE) if ENV_FILE else "",
         }

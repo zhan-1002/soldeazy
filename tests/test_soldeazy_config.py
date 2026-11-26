@@ -39,6 +39,7 @@ def _clean_settings(monkeypatch, tmp_path) -> Settings:
         "SOLDEAZY_WRITE_ENABLED",
         "SOLDEAZY_EXPORT_PROFILE",
         "SOLDEAZY_MANIFEST_PATH",
+        "SOLDEAZY_ENV_FILE",
     ):
         monkeypatch.delenv(name, raising=False)
     # 把 cwd 指到临时仓库根，验证"默认值跟着工作区走"
@@ -186,6 +187,101 @@ def test_credentials_default_to_empty(field: str) -> None:
 
     fields = {item.name: item for item in dataclasses.fields(Settings)}
     assert fields[field].default == ""
+
+
+def _write_env(path: Path, body: str) -> Path:
+    path.write_text(body, encoding="utf-8")
+    return path
+
+
+def test_env_file_is_found_without_relying_on_cwd(monkeypatch, tmp_path) -> None:
+    """``.env`` 必须按「显式指定 → 仓库根 → cwd」找，不能只靠 cwd。
+
+    为什么这是硬要求（2026-11-26 实机踩过）：
+    MCP 客户端拉起服务进程时给的 cwd 往往不是仓库根（Cursor 给的是
+    它自己的工作目录）。``load_dotenv()`` 不带参数只从 cwd 往上找，
+    于是 ``.env`` 里的 ``SOLDEAZY_USERNAME/PASSWORD`` 读不到，
+    ``credentials_configured`` 永远是 false，登录只能靠人工点窗口。
+    """
+
+    from soldeazy_mcp_server import config
+
+    env_file = _write_env(
+        tmp_path / "elsewhere.env",
+        "SOLDEAZY_USERNAME=test-user\nSOLDEAZY_PASSWORD=test-pass\n",
+    )
+    (tmp_path / "unrelated").mkdir()
+    monkeypatch.chdir(tmp_path / "unrelated")
+    monkeypatch.setenv("SOLDEAZY_ENV_FILE", str(env_file))
+    monkeypatch.delenv("SOLDEAZY_USERNAME", raising=False)
+    monkeypatch.delenv("SOLDEAZY_PASSWORD", raising=False)
+
+    found = config._load_env_file()
+
+    assert found == env_file
+    import os
+
+    assert os.environ["SOLDEAZY_USERNAME"] == "test-user"
+
+
+def test_env_file_candidates_prefer_explicit_then_repo_root(monkeypatch, tmp_path) -> None:
+    from soldeazy_mcp_server import config
+
+    monkeypatch.setenv("SOLDEAZY_ENV_FILE", str(tmp_path / "explicit.env"))
+    monkeypatch.chdir(tmp_path)
+    candidates = config._env_file_candidates()
+
+    assert candidates[0] == tmp_path / "explicit.env"
+    root = config._package_root()
+    assert root is not None
+    assert root / ".env" in candidates
+    # cwd 只作兜底，排在仓库根之后
+    assert candidates.index(root / ".env") < candidates.index(Path.cwd() / ".env")
+
+
+def test_real_environment_variables_win_over_env_file(monkeypatch, tmp_path) -> None:
+    """部署脚本注入的环境变量不能被仓库里的 .env 覆盖。"""
+
+    from soldeazy_mcp_server import config
+
+    env_file = _write_env(
+        tmp_path / "creds.env",
+        "SOLDEAZY_USERNAME=from-file\nSOLDEAZY_PASSWORD=file-pass\n",
+    )
+    monkeypatch.setenv("SOLDEAZY_ENV_FILE", str(env_file))
+    monkeypatch.setenv("SOLDEAZY_USERNAME", "from-env")
+    monkeypatch.delenv("SOLDEAZY_PASSWORD", raising=False)
+
+    config._load_env_file()
+
+    import os
+
+    assert os.environ["SOLDEAZY_USERNAME"] == "from-env"
+    # 文件里有、环境里没有的仍然生效
+    assert os.environ["SOLDEAZY_PASSWORD"] == "file-pass"
+
+
+def test_status_reports_which_env_file_was_loaded(monkeypatch, tmp_path) -> None:
+    """凭据没读到时要能一眼看出"加载了哪个 .env"，否则只能瞎猜。"""
+
+    from soldeazy_mcp_server import config
+
+    env_file = _write_env(
+        tmp_path / "diag.env",
+        "SOLDEAZY_USERNAME=u\nSOLDEAZY_PASSWORD=secret-value-xyz\n",
+    )
+    monkeypatch.setenv("SOLDEAZY_ENV_FILE", str(env_file))
+    monkeypatch.setattr(config, "ENV_FILE", env_file)
+    monkeypatch.setenv("SOLDEAZY_USERNAME", "u")
+    monkeypatch.setenv("SOLDEAZY_PASSWORD", "secret-value-xyz")
+
+    status = config.Settings.load().public_status()
+
+    assert status["env_file"] == str(env_file)
+    assert status["credentials_configured"] is True
+    # 状态里只报"配没配"，不能把密码本身带出去
+    assert "SOLDEAZY_PASSWORD" not in repr(status)
+    assert "secret-value-xyz" not in repr(status)
 
 
 def test_write_tools_default_to_disabled() -> None:
