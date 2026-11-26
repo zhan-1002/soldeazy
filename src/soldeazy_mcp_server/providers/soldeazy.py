@@ -2277,12 +2277,27 @@ class SoldeazyBrowser:
             ),
         )
         if not body or body[:2] != b"PK":
+            # 区分三种"不是 xlsx"的原因，否则只会看到一句指错方向的
+            # 「没有返回 xlsx」，然后去查 cookie / DNS / 网络 —— 都查不到。
+            head = body[:2000].decode("utf-8", "ignore") if body else ""
+            lowered = head.lower()
+            if not body:
+                reason = "响应体为空（可能是登录态失效或该筛选下没有数据）"
+            elif "/login" in lowered or "name=\"password\"" in lowered:
+                reason = "返回的是登录页：cookie 已失效，先调 soldeazy_open_login"
+            elif "<table" in lowered:
+                reason = (
+                    "返回的是列表页 HTML 而不是 xlsx：该筛选下没有可导出的数据表"
+                    "（先在 search 里确认 total_records > 0 再导）"
+                )
+            else:
+                reason = "返回的不是 xlsx"
             raise SoldeazyError(
                 "SOLDEAZY_EXPORT_API_FAILED",
-                "cookie 导出没有返回 xlsx",
+                f"导出失败：{reason}",
                 details={
                     "status": status,
-                    "head": body[:160].decode("utf-8", "ignore") if body else "",
+                    "head": head[:300],
                     "form": extra,
                 },
             )
@@ -2599,20 +2614,43 @@ class SoldeazyBrowser:
 
         2026-11-17 取证：某店铺搜索命中 76,096 个数据表，whole_result 只回
         上限那么多，静默漏 96%。仓库历史导出里有 6 份精确停在上限值。
+
+        **命中 0 条时不导出**（2026-11-19 实测）：这时平台的导出接口**不返回
+        xlsx**，而是返回一个 1.1MB 的完整 HTML 页面，于是报出
+        ``cookie 导出没有返回 xlsx`` —— 一个完全指错方向的错误。真正的原因
+        只是"这个范围里没有匹配的数据表"，直接回空字典即可。
         """
 
         from soldeazy_mcp_server.providers.soldeazy_workbook import read_matrix
 
         expected = 0
+        searched = False
         if search:
             found = await self.search(query, site, only_listed=only_listed)
             expected = int(found.get("total_records") or 0)
+            searched = True
         else:
             # 不重新搜索，但要沿用上一条 search 记下的命中数：
             # 否则 expected 恒为 0，"先看数再导"和"导出后核对条数"一起静默失效。
             # 2026-11-18 实机：全站 10,450 个数据表、search=False 时防护完全没触发，
             # 导出照样跑了（本该被拦下）。reconcile 正是用 search=False 调的。
             expected = int(self._last_total_records or 0)
+
+        # 刚刚搜过且一条都没命中 → 没有东西可导，直接回空。
+        #
+        # 只在 `searched` 时短路：`search=False` 的调用用的是上一轮的命中数，
+        # 那个值可能属于另一个查询（例如对账沿用了计划建立时的筛选），
+        # 拿它判"0 条"会误伤。
+        if searched and expected == 0:
+            logger.info(
+                "搜索命中 0 个数据表（query=%r site=%r），跳过导出直接返回空结果",
+                query,
+                site,
+            )
+            self.last_export_total = 0
+            self.last_export_warnings = []
+            self.last_export_shops = []
+            return {}
 
         if expected > PLATFORM_BULK_LIMIT and allow_batches:
             return await self._read_in_batches(
